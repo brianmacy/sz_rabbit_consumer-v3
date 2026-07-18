@@ -4,11 +4,9 @@ import argparse
 import logging
 import traceback
 
-import importlib
 import sys
 import os
 import time
-import random
 import pika
 
 from werkzeug.utils import secure_filename
@@ -84,7 +82,7 @@ try:
                             )
                             prevTime = nowTime
 
-                except Exception as err:
+                except Exception:
                     traceback.print_exc()
                     conn.close()
                     exit(-1)
