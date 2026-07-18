@@ -11,10 +11,9 @@ import importlib
 import sys
 import os
 import time
-import random
 import pika
 
-from senzing import G2Engine, G2Exception, G2EngineFlags, G2RetryTimeoutExceededException, G2BadInputException
+from senzing import G2Engine, G2RetryTimeoutExceededException, G2BadInputException
 
 INTERVAL = 10000
 LONG_RECORD = 300
@@ -152,7 +151,7 @@ try:
                                     TUPLE_ACKED
                                 ]:  # if we rejected a message before we should not ack it here
                                     ch.basic_ack(msg[TUPLE_MSG][MSG_FRAME].delivery_tag)
-                            except (G2RetryTimeoutExceededException, G2BadInputException) as err:
+                            except (G2RetryTimeoutExceededException, G2BadInputException):
                                 if not msg[
                                     TUPLE_ACKED
                                 ]:  # if we rejected a message before we should not ack it here
