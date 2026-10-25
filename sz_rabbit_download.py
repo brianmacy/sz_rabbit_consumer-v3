@@ -2,13 +2,11 @@
 
 import argparse
 import logging
-import traceback
-
-import sys
 import os
+import sys
 import time
-import pika
 
+import pika
 from werkzeug.utils import secure_filename
 
 INTERVAL = 1000
@@ -17,6 +15,7 @@ MSG_FRAME = 0
 MSG_BODY = 2
 
 log_format = "%(asctime)s %(message)s"
+logger = logging.getLogger(__name__)
 
 try:
     log_level_map = {
@@ -57,40 +56,41 @@ try:
     prevTime = time.time()
 
     params = pika.URLParameters(args.url)
-    with pika.BlockingConnection(params) as conn:
-        with open(secure_filename(args.output), "a") as fpOut:
-            messages = 0
-            ch = conn.channel()
-            ch.queue_declare(queue=args.queue, passive=True)
-            for msg in ch.consume(args.queue, inactivity_timeout=1):
-                if not msg or not msg[MSG_BODY]:
-                    break
-                try:
-                    nowTime = time.time()
-                    fpOut.write(msg[MSG_BODY].decode())
-                    fpOut.write('\n')
-                    ch.basic_ack(msg[MSG_FRAME].delivery_tag)
-                    messages += 1
+    with (
+        pika.BlockingConnection(params) as conn,
+        open(secure_filename(args.output), "a") as fpOut,
+    ):
+        messages = 0
+        ch = conn.channel()
+        ch.queue_declare(queue=args.queue, passive=True)
+        for msg in ch.consume(args.queue, inactivity_timeout=1):
+            if not msg or not msg[MSG_BODY]:
+                break
+            try:
+                nowTime = time.time()
+                fpOut.write(msg[MSG_BODY].decode())
+                fpOut.write('\n')
+                ch.basic_ack(msg[MSG_FRAME].delivery_tag)
+                messages += 1
 
-                    if messages % INTERVAL == 0:  # display rate stats
-                        diff = nowTime - prevTime
-                        speed = -1
-                        if diff > 0.0:
-                            speed = int(INTERVAL / diff)
-                            print(
-                                f"Downloaded {messages} messages, {speed} records per second"
-                            )
-                            prevTime = nowTime
+                if messages % INTERVAL == 0:  # display rate stats
+                    diff = nowTime - prevTime
+                    speed = -1
+                    if diff > 0.0:
+                        speed = int(INTERVAL / diff)
+                        print(
+                            f"Downloaded {messages} messages, {speed} records per second"
+                        )
+                        prevTime = nowTime
 
-                except Exception:
-                    traceback.print_exc()
-                    conn.close()
-                    exit(-1)
+            except Exception:
+                logger.exception("Failed to save message")
+                conn.close()
+                sys.exit(-1)
 
-            print(f"Downloaded total of {messages} messages")
+        print(f"Downloaded total of {messages} messages")
 
 
-except Exception as err:
-    print(err, file=sys.stderr)
-    traceback.print_exc()
-    exit(-1)
+except Exception:
+    logger.exception("Fatal error")
+    sys.exit(-1)

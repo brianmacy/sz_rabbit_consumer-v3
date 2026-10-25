@@ -24,7 +24,6 @@
 
 # Import from standard library. https://docs.python.org/3/library/
 
-from urllib.parse import urlparse
 import json
 import logging
 import os
@@ -32,9 +31,9 @@ import re
 import string
 import threading
 import time
+from urllib.parse import urlparse
 
 # Import from https://pypi.org/
-
 import psycopg2
 
 # Metadata
@@ -47,6 +46,7 @@ __updated__ = '2022-05-19'
 # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5017"
 log_format = '%(asctime)s %(message)s'
+logger = logging.getLogger(__name__)
 
 # Lists from https://www.ietf.org/rfc/rfc1738.txt
 
@@ -55,6 +55,10 @@ safe_character_list = ['$', '-', '_', '.', '+', '!',
 unsafe_character_list = ['"', '<', '>', '#', '%',
                          '{', '}', '|', '\\', '^', '~', '[', ']', '`']
 reserved_character_list = [';', ',', '/', '?', ':', '@', '=', '&']
+
+
+class FormatMismatchError(ValueError):
+    """Raised when a string does not match the expected format string."""
 
 
 class Governor:
@@ -100,8 +104,7 @@ class Governor:
         # Detect an error condition where there are not enough safe characters.
 
         if len(unsafe_characters) > len(safe_characters):
-            logging.error("There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}".format(
-                unsafe_characters, safe_characters))
+            logger.error(f"There are not enough safe characters to do the translation. Unsafe Characters: {unsafe_characters}; Safe Characters: {safe_characters}")
             return result
 
         # Perform translation.
@@ -109,10 +112,8 @@ class Governor:
         # "senzing_database_url" is modified to have only safe characters.
 
         translation_map = {}
-        safe_characters_index = 0
-        for unsafe_character in unsafe_characters:
+        for safe_characters_index, unsafe_character in enumerate(unsafe_characters):
             safe_character = safe_characters[safe_characters_index]
-            safe_characters_index += 1
             translation_map[safe_character] = unsafe_character
             senzing_database_url = senzing_database_url.replace(
                 unsafe_character, safe_character)
@@ -151,7 +152,7 @@ class Governor:
         # Now replace keyword arguments with named groups matching them. We also escape between keyword
         # arguments so we support meta-characters there. Re-join tokens to form our regexp pattern
 
-        tokens[1::2] = map(u'(?P<{}>.*)'.format, keywords)
+        tokens[1::2] = map('(?P<{}>.*)'.format, keywords)
         tokens[0::2] = map(re.escape, tokens[0::2])
         pattern = ''.join(tokens)
 
@@ -159,7 +160,7 @@ class Governor:
 
         matches = re.match(pattern, string_to_be_parsed)
         if not matches:
-            raise Exception("Format string did not match")
+            raise FormatMismatchError("Format string did not match")
 
         # Return a dict with all of our keywords and their values
 
@@ -236,8 +237,7 @@ class Governor:
         **kwargs
     ):
 
-        logging.info("senzing-{0}0001I Using governor-postgresql-transaction-id Governor. Version: {1} Updated: {2}".format(
-            SENZING_PRODUCT_ID, __version__, __updated__))
+        logger.info(f"senzing-{SENZING_PRODUCT_ID}0001I Using governor-postgresql-transaction-id Governor. Version: {__version__} Updated: {__updated__}")
 
         # Instance variables. Precedence: 1) OS Environment variables, 2) parameters
 
@@ -287,8 +287,7 @@ class Governor:
             "SENZING_GOVERNOR_CHECK_TIME_INTERVAL_IN_SECONDS", check_time_interval_in_seconds))
         self.log_interval_in_seconds = int(
             os.getenv("SENZING_GOVERNOR_LOG_INTERVAL_IN_SECONDS", log_interval_in_seconds))
-        logging.info("senzing-{0}0002I SENZING_GOVERNOR_POSTGRESQL_HIGH_WATERMARK: {1}; SENZING_GOVERNOR_INTERVAL: {2}; SENZING_GOVERNOR_POSTGRESQL_LOW_WATERMARK {3}; SENZING_GOVERNOR_HINT: {4}; SENZING_GOVERNOR_LOG_INTERVAL_IN_SECONDS: {5}".format(
-            SENZING_PRODUCT_ID, self.high_watermark, self.interval, self.low_watermark, self.hint, self.log_interval_in_seconds))
+        logger.info(f"senzing-{SENZING_PRODUCT_ID}0002I SENZING_GOVERNOR_POSTGRESQL_HIGH_WATERMARK: {self.high_watermark}; SENZING_GOVERNOR_INTERVAL: {self.interval}; SENZING_GOVERNOR_POSTGRESQL_LOW_WATERMARK {self.low_watermark}; SENZING_GOVERNOR_HINT: {self.hint}; SENZING_GOVERNOR_LOG_INTERVAL_IN_SECONDS: {self.log_interval_in_seconds}")
 
         # Synthesize variables.
 
@@ -309,13 +308,13 @@ class Governor:
 
                 schema = database_connection_string.split(':')[0]
                 if schema != "postgresql":
-                    logging.info("senzing-{product_id}0701W SENZING_GOVERNOR_DATABASE_URLS contains a non-postgres URL:  {schema}://{user}:xxxxxxxx@{host}:{port}/{dbname}".format(
+                    logger.info("senzing-{product_id}0701W SENZING_GOVERNOR_DATABASE_URLS contains a non-postgres URL:  {schema}://{user}:xxxxxxxx@{host}:{port}/{dbname}".format(
                         product_id=SENZING_PRODUCT_ID, schema=schema, **parsed_database_url))
                     continue
 
                 # Create connection.
 
-                logging.info("senzing-{product_id}0003I Governor monitoring {schema}://{user}:xxxxxxxx@{host}:{port}/{dbname}".format(
+                logger.info("senzing-{product_id}0003I Governor monitoring {schema}://{user}:xxxxxxxx@{host}:{port}/{dbname}".format(
                     product_id=SENZING_PRODUCT_ID, schema=schema, **parsed_database_url))
                 connection = psycopg2.connect(**parsed_database_url)
                 connection.set_session(
@@ -383,8 +382,7 @@ class Governor:
                     current_log_time = time.time()
                     # only log a message when the log interval has passed
                     if ((current_log_time - self.last_log_time) > self.log_interval_in_seconds):
-                        logging.info("senzing-{0}0004I Governor is checking PostgreSQL Transaction IDs. Host: {1}; Database: {2}; Current XID: {3} ({4}); High watermark XID: {5}".format(
-                            SENZING_PRODUCT_ID, database_host, database_name, watermark, oid_name, self.high_watermark))
+                        logger.info(f"senzing-{SENZING_PRODUCT_ID}0004I Governor is checking PostgreSQL Transaction IDs. Host: {database_host}; Database: {database_name}; Current XID: {watermark} ({oid_name}); High watermark XID: {self.high_watermark}")
                         self.last_log_time = current_log_time
 
                     # When we get above the low water mark, use our wait time
@@ -395,12 +393,11 @@ class Governor:
                         current_log_time = time.time()
                         # log a message when the wait_time changes OR if the log interval has passed
                         if (wait_time != self.old_wait_time) or ((current_log_time - self.last_log_time) > self.log_interval_in_seconds):
-                            logging.info("senzing-{0}0005I Governor waiting {1} seconds for {2} database age(XID) to go from current value of {3} ({4}) to low watermark of {5}.".format(
-                                SENZING_PRODUCT_ID, wait_time, database_name, watermark, oid_name, self.low_watermark))
+                            logger.info(f"senzing-{SENZING_PRODUCT_ID}0005I Governor waiting {wait_time} seconds for {database_name} database age(XID) to go from current value of {watermark} ({oid_name}) to low watermark of {self.low_watermark}.")
                             self.old_wait_time = wait_time
                             self.last_log_time = current_log_time
                     elif self.old_wait_time != 0.0:
-                        logging.info("Governor delay ended. Returning to no wait.")
+                        logger.info("Governor delay ended. Returning to no wait.")
                         self.old_wait_time = 0.0
         return self.old_wait_time
 
@@ -410,8 +407,8 @@ class Governor:
         for database_connection in self.database_connections.values():
             database_connection.get('cursor').close()
             database_connection.get('connection').close()
-        logging.info(
-            "senzing-{0}0006I Governor closed.".format(SENZING_PRODUCT_ID))
+        logger.info(
+            f"senzing-{SENZING_PRODUCT_ID}0006I Governor closed.")
 
 
 if __name__ == '__main__':
@@ -441,6 +438,6 @@ if __name__ == '__main__':
     sql_connection_strings = governor.database_urls.split(
         governor.list_separator)
     for sql_connection_string in sql_connection_strings:
-        logging.info(
-            "senzing-{0}0007I Database: {1}".format(SENZING_PRODUCT_ID, sql_connection_string))
+        logger.info(
+            f"senzing-{SENZING_PRODUCT_ID}0007I Database: {sql_connection_string}")
 
